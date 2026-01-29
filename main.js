@@ -1,130 +1,160 @@
-function sortByName(order) {
-  currentData = [...currentData].sort((a, b) => {
-    if (order === 'asc') return a.title.localeCompare(b.title);
-    else return b.title.localeCompare(a.title);
-  });
-  renderData(currentData);
-}
-// main.js
 
-let allData = [];
-let currentData = [];
-fetch('db.json')
-  .then(response => response.json())
-  .then(data => {
-    allData = data;
-    currentData = [...allData];
-    renderData(currentData);
-  })
-  .catch(() => {
-    document.getElementById('data-container').textContent = 'Không thể tải dữ liệu từ db.json!';
-  });
-
-function onSearchChanged() {
-  const value = document.getElementById('searchInput').value.toLowerCase();
-  currentData = allData.filter(item => item.title.toLowerCase().includes(value));
-  renderData(currentData);
-}
-
-function sortByPrice(order) {
-  currentData = [...currentData].sort((a, b) => {
-    if (order === 'asc') return a.price - b.price;
-    else return b.price - a.price;
-  });
-  renderData(currentData);
+// Load posts and comments
+async function Load() {
+    try {
+        let res = await fetch('http://localhost:3000/posts');
+        let data = await res.json();
+        let body = document.getElementById("table-body");
+        body.innerHTML = "";
+        for (const post of data) {
+            if (post.isDeleted) {
+                body.innerHTML += `
+                <tr style="color:gray;">
+                    <td><s>${post.id}</s></td>
+                    <td><s>${post.title}</s></td>
+                    <td><s>${post.views}</s></td>
+                    <td><s>Đã xoá</s></td>
+                </tr>`
+            } else {
+                body.innerHTML += `
+                <tr>
+                    <td>${post.id}</td>
+                    <td>${post.title}</td>
+                    <td>${post.views}</td>
+                    <td><input value="Delete" type="submit" onclick="Delete('${post.id}')" /></td>
+                </tr>`
+            }
+        }
+        LoadComments();
+    } catch (error) {}
 }
 
-function renderData(data) {
-  if (!Array.isArray(data) || data.length === 0) {
-    document.getElementById('data-container').innerHTML = '<div class="alert alert-warning">Không có dữ liệu.</div>';
-    return;
-  }
-  let html = '<table class="table table-bordered table-hover align-middle rounded-3 overflow-hidden">'
-    + '<thead class="table-primary text-center"><tr>'
-    + '<th style="width:60px">ID</th>'
-    + '<th style="min-width:180px">Tên sản phẩm</th>'
-    + '<th style="width:100px">Giá</th>'
-    + '<th style="min-width:220px">Mô tả</th>'
-    + '<th style="min-width:120px">Danh mục</th>'
-    + '<th style="width:120px">Hình ảnh</th>'
-    + '<th style="width:120px">Thao tác</th>'
-    + '</tr></thead><tbody>';
-  html += data.map(item =>
-    `<tr>
-      <td class="text-center fw-bold">${item.id}</td>
-      <td>${item.title}</td>
-      <td class="text-end text-primary fw-semibold">${item.price.toLocaleString()}$</td>
-      <td>${item.description}</td>
-      <td>${item.category?.name || ''}</td>
-      <td class="text-center"><img src="${item.images?.[0] || ''}" alt="image" class="rounded shadow-sm border" style="max-width:70px;max-height:70px;object-fit:cover"></td>
-      <td class="text-center">
-        <button class="btn btn-sm btn-warning me-1" onclick="openEditModal(${item.id})">Sửa</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteItem(${item.id})">Xóa</button>
-      </td>
-    </tr>`
-  ).join('');
-  html += '</tbody></table>';
-  document.getElementById('data-container').innerHTML = html;
+// Save or update post
+async function Save() {
+    let id = document.getElementById("id_txt").value;
+    let title = document.getElementById("title_txt").value;
+    let views = document.getElementById("views_txt").value;
+    let res;
+    if (id) {
+        // Update
+        res = await fetch('http://localhost:3000/posts/' + id, {
+            method: 'PUT',
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ title: title, views: views })
+        });
+    } else {
+        // Create mới, tự động sinh id dạng chuỗi
+        let resAll = await fetch('http://localhost:3000/posts');
+        let allPosts = await resAll.json();
+        let maxId = 0;
+        for (const p of allPosts) {
+            let pid = parseInt(p.id);
+            if (!isNaN(pid) && pid > maxId) maxId = pid;
+        }
+        let newId = (maxId + 1).toString();
+        res = await fetch('http://localhost:3000/posts', {
+            method: 'POST',
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ id: newId, title: title, views: views })
+        });
+    }
+    if (res.ok) {
+        console.log("them/cap nhat thanh cong");
+        Load();
+    }
 }
 
-// Xóa sản phẩm
-function deleteItem(id) {
-  if (confirm('Bạn có chắc muốn xóa sản phẩm này?')) {
-    allData = allData.filter(item => item.id !== id);
-    currentData = currentData.filter(item => item.id !== id);
-    renderData(currentData);
-  }
+// Soft delete post
+async function Delete(id) {
+    // Xoá mềm: cập nhật isDeleted:true
+    let res = await fetch('http://localhost:3000/posts/' + id, {
+        method: 'PATCH',
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ isDeleted: true })
+    });
+    if (res.ok) {
+        console.log("xóa thành công");
+        Load();
+    }
 }
 
-// Mở modal sửa
-function openEditModal(id) {
-  const item = allData.find(i => i.id === id);
-  if (!item) return;
-  document.getElementById('editId').value = item.id;
-  document.getElementById('editTitle').value = item.title;
-  document.getElementById('editPrice').value = item.price;
-  document.getElementById('editDescription').value = item.description;
-  document.getElementById('editCategory').value = item.category?.name || '';
-  document.getElementById('editImage').value = item.images?.[0] || '';
-  const modal = new bootstrap.Modal(document.getElementById('editModal'));
-  modal.show();
+// CRUD cho comments
+async function LoadComments() {
+    try {
+        let res = await fetch('http://localhost:3000/comments');
+        let data = await res.json();
+        let body = document.getElementById("comments-body");
+        if (!body) return;
+        body.innerHTML = "";
+        for (const c of data) {
+            body.innerHTML += `
+            <tr>
+                <td>${c.id}</td>
+                <td>${c.text}</td>
+                <td>${c.postId}</td>
+                <td>
+                    <input type="button" value="Edit" onclick="EditComment('${c.id}','${c.text}','${c.postId}')" />
+                    <input type="button" value="Delete" onclick="DeleteComment('${c.id}')" />
+                </td>
+            </tr>`;
+        }
+    } catch (e) {}
 }
 
-// Lưu chỉnh sửa
-document.addEventListener('DOMContentLoaded', function() {
-  const form = document.getElementById('editForm');
-  if (form) {
-    form.onsubmit = function(e) {
-      e.preventDefault();
-      const id = Number(document.getElementById('editId').value);
-      const title = document.getElementById('editTitle').value;
-      const price = Number(document.getElementById('editPrice').value);
-      const description = document.getElementById('editDescription').value;
-      const category = document.getElementById('editCategory').value;
-      const image = document.getElementById('editImage').value;
-      // Cập nhật dữ liệu
-      allData = allData.map(item =>
-        item.id === id ? {
-          ...item,
-          title,
-          price,
-          description,
-          category: { ...item.category, name: category },
-          images: [image]
-        } : item
-      );
-      currentData = currentData.map(item =>
-        item.id === id ? {
-          ...item,
-          title,
-          price,
-          description,
-          category: { ...item.category, name: category },
-          images: [image]
-        } : item
-      );
-      renderData(currentData);
-      bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
-    };
-  }
-});
+async function SaveComment() {
+    let id = document.getElementById("cid_txt").value;
+    let text = document.getElementById("ctext_txt").value;
+    let postId = document.getElementById("cpostid_txt").value;
+    let res;
+    if (id) {
+        res = await fetch('http://localhost:3000/comments/' + id, {
+            method: 'PUT',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, postId })
+        });
+    } else {
+        let resAll = await fetch('http://localhost:3000/comments');
+        let all = await resAll.json();
+        let maxId = 0;
+        for (const c of all) {
+            let cid = parseInt(c.id);
+            if (!isNaN(cid) && cid > maxId) maxId = cid;
+        }
+        let newId = (maxId + 1).toString();
+        res = await fetch('http://localhost:3000/comments', {
+            method: 'POST',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: newId, text, postId })
+        });
+    }
+    if (res.ok) {
+        console.log("comment them/cap nhat thanh cong");
+        LoadComments();
+    }
+}
+
+async function DeleteComment(id) {
+    let res = await fetch('http://localhost:3000/comments/' + id, { method: 'DELETE' });
+    if (res.ok) {
+        console.log("comment xóa thành công");
+        LoadComments();
+    }
+}
+
+function EditComment(id, text, postId) {
+    document.getElementById("cid_txt").value = id;
+    document.getElementById("ctext_txt").value = text;
+    document.getElementById("cpostid_txt").value = postId;
+}
+
+window.onload = function() {
+    Load();
+    LoadComments();
+}
+Load();
